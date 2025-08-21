@@ -1,2 +1,5 @@
-# Robustness & diagnostics ----
-# TODO: LOCO, alt σ, NUTS vintage sensitivity, spatial autocorr (Moran's I)
+# Robustness scaffolds ----
+source('code/00_setup.R'); library(data.table); library(fixest)
+
+# Placeholder for leave-one-country-out (LOCO) and alternative σ metrics.
+# Implement after first-pass models are stable.
