@@ -1,0 +1,1 @@
+Run: 2025-08-25 18:13:19 | sample=Tonly_wpop_anchor2019_ANNUAL | n=5475 | beta_baseline=-0.426614
