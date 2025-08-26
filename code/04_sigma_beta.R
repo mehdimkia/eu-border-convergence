@@ -1,5 +1,5 @@
 # 04_sigma_beta.R — σ and β (EU-27; LE at birth; ANNUALIZED growth; weighted primary)
-# Adds anchor-year weight option + strict annual β + 5-year forward-growth rolling β
+# - Anchor-year weight option + strict annual β + K-year forward-growth rolling β
 # Usage: source("code/04_sigma_beta.R") from the repo root
 
 # -------- Toggles --------
@@ -28,59 +28,64 @@ suppressPackageStartupMessages({
 })
 
 dir.create("outputs", showWarnings = FALSE, recursive = TRUE)
-dir.create("figs", showWarnings = FALSE, recursive = TRUE)
+dir.create("figs",    showWarnings = FALSE, recursive = TRUE)
 
 # -------- Load panels & flags --------
 le    <- readRDS("data/derived/le_panel_raw.rds")
-flags <- data.table::fread("data/derived/border_flags.csv")
 pop   <- readRDS("data/derived/pop_panel_raw.rds")
+flags <- data.table::fread("data/derived/border_flags.csv")  # contains eu_member
 
-setDT(le); setDT(flags); setDT(pop)
+setDT(le); setDT(pop); setDT(flags)
 
-# Merge flags + population
+# Merge flags + population (year-specific pop; may be replaced by anchor weights below)
 le <- merge(le, flags, by.x = "geo", by.y = "NUTS_ID", all.x = TRUE)
-le <- merge(le, pop,  by = c("geo","year"), all.x = TRUE)  # 'pop' here is year-specific; we may replace with anchor weights below
+le <- merge(le, pop,   by = c("geo","year"),            all.x = TRUE)  # 'pop' is year-specific
 
-# Keep EU-27 & life expectancy at birth
-le <- le[substr(geo, 1, 2) %in% EU27]
-if ("age" %in% names(le)) le <- le[age == "Y_LT1"]
+# Keep EU-27 & life expectancy at birth (Eurostat uses Y_LT1 or sometimes Y0)
+stopifnot("eu_member" %in% names(le))
+le <- le[eu_member == TRUE]
+if ("age" %in% names(le)) le <- le[age %in% c("Y_LT1","Y0")]
 
 # Sanity conversions
 le[, value := as.numeric(value)]
 le[, pop   := as.numeric(pop)]
 
-# -------- Build weight vector --------
+# -------- Build weights (anchor-year or yearly) --------
 # If using anchor-year weights: for each geo, take population from ANCHOR_YEAR
-# If missing, take the nearest available year to ANCHOR_YEAR (tie -> earliest)
+# If missing, take nearest available year to ANCHOR_YEAR (tie -> earliest)
+weight_label <- if (USE_ANCHOR_WEIGHTS) sprintf("anchor%d", ANCHOR_YEAR) else "yearly"
+
 if (USE_ANCHOR_WEIGHTS) {
   pa <- copy(pop)[!is.na(pop)]
   pa[, dist := abs(year - ANCHOR_YEAR)]
   setorder(pa, geo, dist, year)
-  pa <- pa[, .SD[1L], by = geo]
+  pa <- pa[, .SD[1L], by = geo]           # nearest-to-anchor per geo
   setnames(pa, "pop", "w_pop")
-  pa[, year := NULL]; pa[, dist := NULL]
+  pa[, `:=`(year = NULL, dist = NULL)]
   le <- merge(le, pa, by = "geo", all.x = TRUE)
-  # Guard: if any w_pop still NA, fall back to mean(pop) across years for that geo (rare)
+  
+  # Fallback: mean(pop) across available years for any remaining NA w_pop (rare)
   if (anyNA(le$w_pop)) {
     fallback <- pop[, .(w_pop = mean(pop, na.rm = TRUE)), by = geo]
     le <- merge(le, fallback, by = "geo", all.x = TRUE, suffixes = c("", "_fb"))
     le[, w_pop := fifelse(is.na(w_pop), w_pop_fb, w_pop)]
     le[, w_pop_fb := NULL]
   }
-  weight_label <- paste0("anchor", ANCHOR_YEAR)
 } else {
-  le[, w_pop := pop]
-  weight_label <- "yearly"
+  le[, w_pop := pop]  # year-specific weights
 }
 
 stopifnot(!all(is.na(le$w_pop)))
 le[, w_pop := as.numeric(w_pop)]
 
-# -------- Weighted σ-convergence (log-LE; T only) --------
-wsd <- function(x, w) {
-  w <- if (missing(w) || is.null(w)) rep(1/length(x), length(x)) else w/sum(w, na.rm = TRUE)
-  mu <- sum(w * x, na.rm = TRUE)
-  sqrt(sum(w * (x - mu)^2, na.rm = TRUE))
+# -------- Weighted σ-convergence (SD of log-LE; sex = T) --------
+wsd <- function(x, w = NULL) {
+  if (is.null(w)) w <- rep(1, length(x))
+  ok <- is.finite(x) & is.finite(w) & w > 0
+  x <- x[ok]; w <- w[ok]
+  w <- w / sum(w)
+  mu <- sum(w * x)
+  sqrt(sum(w * (x - mu)^2))
 }
 
 sigma_series <- le[sex == "T" & is.finite(value) & is.finite(w_pop) & w_pop > 0, {
@@ -95,52 +100,49 @@ g_sigma <- ggplot(sigma_series, aes(year, sigma)) +
   labs(y = "SD(log LE)", x = NULL,
        title = sprintf("σ-convergence (EU-27; LE at birth; weighted, %s)", weight_label)) +
   theme_pub()
-ggplot2::ggsave(sprintf("figs/F2_sigma_series_wpop%s.png",
-                        ifelse(USE_ANCHOR_WEIGHTS, "", "_yearly")),
-                g_sigma, width = 7, height = 4, dpi = 300)
-# Also write legacy filename used in manuscript (points to current weight choice)
+ggplot2::ggsave(sprintf("figs/F2_sigma_series_wpop_%s.png", weight_label), g_sigma, width = 7, height = 4, dpi = 300)
+# Legacy filename used in manuscript → points to current weight choice
 ggplot2::ggsave("figs/F2_sigma_series_wpop.png", g_sigma, width = 7, height = 4, dpi = 300)
 
-# -------- Segmented σ (change in slope after 2020, robust SE) --------
-sigma_series[, `:=`(post = pmax(0, year - 2020),
-                    year_c = year - 1995)]
-m_pw <- lm(sigma ~ year_c + post, data = sigma_series)
+# -------- Segmented σ (change in slope after 2020, robust SE) on ln(σ) --------
+sigma_series[, `:=`(
+  ln_sigma = log(sigma),
+  post     = pmax(0, year - 2020),
+  year_c   = year - 1995
+)]
+m_pw <- lm(ln_sigma ~ year_c + post, data = sigma_series)
 
-# Robust vcov and tidy table (manual to avoid dimnames issues)
-vcNW <- NeweyWest(m_pw, lag = 2)
-terms <- names(coef(m_pw))
-est   <- as.numeric(coef(m_pw))
-se    <- sqrt(diag(vcNW))
-stat  <- est / se
-pval  <- 2*pt(abs(stat), df = stats::df.residual(m_pw), lower.tail = FALSE)
+# Newey–West (lag=2) robust vcov
+vcNW  <- NeweyWest(m_pw, lag = 2)
+co    <- coef(m_pw)
+sevec <- sqrt(diag(vcNW))
+stat  <- co / sevec
+pval  <- 2 * pt(abs(stat), df = df.residual(m_pw), lower.tail = FALSE)
 
 ct_df <- data.frame(
-  term     = terms,
-  estimate = est,
-  std_error= se,
-  statistic= stat,
-  p_value  = pval,
+  term      = names(co),
+  estimate  = unname(co),
+  std_error = unname(sevec),
+  statistic = unname(stat),
+  p_value   = unname(pval),
   stringsAsFactors = FALSE
 )
 write.csv(ct_df, sprintf("outputs/sigma_piecewise_2020_wpop_%s.csv", weight_label), row.names = FALSE)
 
-# Also export pre/post/Δ slopes with 95% CIs
-pre  <- unname(coef(m_pw)["year_c"])
-post <- unname(coef(m_pw)["year_c"] + coef(m_pw)["post"])
-del  <- unname(coef(m_pw)["post"])
-
-se_pre  <- sqrt(vcNW["year_c","year_c"])
-se_post <- sqrt(vcNW["year_c","year_c"] + vcNW["post","post"] + 2*vcNW["year_c","post"])
-se_del  <- sqrt(vcNW["post","post"])
+# Export pre/post/Δ slopes in % per year (on σ scale via ln-slope)
+pre   <- unname(co["year_c"])
+del   <- unname(co["post"])
+post  <- pre + del
+se_pre  <- sevec["year_c"]
+se_del  <- sevec["post"]
+se_post <- sqrt(se_pre^2 + se_del^2 + 2 * vcNW["year_c", "post"])
 
 sum_df <- data.table(
-  metric   = c("pre_2020_slope","post_2020_slope","delta_slope"),
-  estimate = c(pre, post, del),
-  se       = c(se_pre, se_post, se_del)
-)[, `:=`(
-  ci_lo = estimate - 1.96*se,
-  ci_hi = estimate + 1.96*se
-)]
+  metric   = c("pre_2020_slope_pctpy","post_2020_slope_pctpy","delta_slope_pctpy"),
+  estimate = 100 * c(pre, post, del),
+  se       = 100 * c(se_pre, se_post, se_del)
+)[, `:=`(ci_lo = estimate - 1.96 * se,
+         ci_hi = estimate + 1.96 * se)]
 fwrite(sum_df, sprintf("outputs/sigma_piecewise_2020_summary_wpop_%s.csv", weight_label))
 
 # -------- β-convergence (annualized growth; weighted primary) --------
@@ -151,31 +153,27 @@ le[, year_lead  := shift(year,  type = "lead"), by = .(geo, sex)]
 le[, step := year_lead - year]
 le <- le[step == 1]  # enforce strictly annual steps
 
-# Annualized growth (annual diffs)
+# Annualized growth (simple annual difference)
 le[, g := (value_lead - value) / step]
 le <- le[is.finite(g)]
 
 # Winsorize within (year × sex) at 0.5% / 99.5%
-le[, c("lo","hi") := as.list(quantile(g, c(.005,.995), na.rm = TRUE)), by = .(year, sex)]
-le[g < lo, g := lo]
-le[g > hi, g := hi]
+le[, c("lo","hi") := as.list(quantile(g, c(.005, .995), na.rm = TRUE)), by = .(year, sex)]
+le[g <  lo, g := lo]
+le[g >  hi, g := hi]
 le[, c("lo","hi") := NULL]
 
 # Population-weighted EU mean baseline by (year × sex); weights per toggle
-eu_mean <- le[, .(eu_mean = weighted.mean(value, w = w_pop, na.rm = TRUE)),
-              by = .(year, sex)]
+eu_mean <- le[, .(eu_mean = weighted.mean(value, w = w_pop, na.rm = TRUE)), by = .(year, sex)]
 le <- merge(le, eu_mean, by = c("year","sex"))
 le[, baseline := value - eu_mean]
 
 # ---- Choose ONE β sample (T only is primary) ----
 SAMPLE <- quote(sex == "T")
+dt <- le[eval(SAMPLE) & is.finite(g) & is.finite(baseline) & is.finite(w_pop) & w_pop > 0]
 
-dt <- le[eval(SAMPLE) &
-         is.finite(g) & is.finite(baseline) &
-         is.finite(w_pop) & w_pop > 0]
-
-# TWFE model with region & year FE; cluster by region; weights = w_pop (ANNUAL)
-bmod_w_annual <- feols(g ~ baseline | geo + year, data = dt, cluster = ~geo, weights = ~w_pop)
+# TWFE with region & year FE; cluster by region; weights = w_pop
+bmod_w_annual <- feols(g ~ baseline | geo + year, data = dt, cluster = ~ geo, weights = ~ w_pop)
 
 # Guardrail
 stopifnot(nobs(bmod_w_annual) == nrow(dt))
@@ -192,40 +190,58 @@ cat(sprintf("Run: %s | sample=Tonly_wpop_%s_ANNUAL | n=%d | beta_baseline=%.6f\n
 
 # -------- Rolling β using K-year forward growth (annualized) --------
 if (ROLLING_USE_K_YEARS) {
-  # Build K-year forward growth on the original (pre-step-filter) panel
-  leK <- readRDS("data/derived/le_panel_raw.rds")
-  setDT(leK); leK <- merge(leK, flags[, .(NUTS_ID, CNTR_CODE)], by.x="geo", by.y="NUTS_ID", all.x=TRUE)
-  leK <- leK[substr(geo, 1, 2) %in% EU27]
-  if ("age" %in% names(leK)) leK <- leK[age == "Y_LT1"]
-  leK <- merge(leK, if (USE_ANCHOR_WEIGHTS) pa[, .(geo, w_pop)] else pop[, .(geo, year, pop)][, .(geo, w_pop = pop)], by="geo", all.x=TRUE)
+  # Build K-year forward growth on a fresh panel (avoid step==1 filter)
+  leK <- readRDS("data/derived/le_panel_raw.rds"); setDT(leK)
+  # EU flag from flags (handles EL automatically)
+  leK <- merge(leK, flags[, .(NUTS_ID, eu_member)], by.x = "geo", by.y = "NUTS_ID", all.x = TRUE)
+  leK <- leK[eu_member == TRUE]
+  if ("age" %in% names(leK)) leK <- leK[age %in% c("Y_LT1","Y0")]
+  
+  # Attach weights (anchor-year or yearly)
+  if (USE_ANCHOR_WEIGHTS) {
+    # re-use 'pa' computed above
+    leK <- merge(leK, pa[, .(geo, w_pop)], by = "geo", all.x = TRUE)
+  } else {
+    leK <- merge(leK, pop[, .(geo, year, w_pop = pop)], by = c("geo","year"), all.x = TRUE)
+  }
+  
   leK[, value := as.numeric(value)]
   setorder(leK, geo, sex, year)
+  
+  # K-year lead
   leK[, value_lead_k := shift(value, n = K_YEARS, type = "lead"), by = .(geo, sex)]
   leK[, year_lead_k  := shift(year,  n = K_YEARS, type = "lead"), by = .(geo, sex)]
   leK[, step_k := year_lead_k - year]
-  dtk <- leK[sex=="T" & step_k == K_YEARS]
+  
+  dtk <- leK[sex == "T" & step_k == K_YEARS]
   dtk[, gk := (value_lead_k - value) / K_YEARS]
   dtk <- dtk[is.finite(gk) & is.finite(w_pop) & w_pop > 0]
+  
   # Winsorize by start-year
-  dtk[, c("lo","hi") := as.list(quantile(gk, c(.005,.995), na.rm = TRUE)), by = .(year)]
-  dtk[gk < lo, gk := lo]; dtk[gk > hi, gk := hi]; dtk[, c("lo","hi") := NULL]
+  dtk[, c("lo","hi") := as.list(quantile(gk, c(.005, .995), na.rm = TRUE)), by = .(year)]
+  dtk[gk <  lo, gk := lo]
+  dtk[gk >  hi, gk := hi]
+  dtk[, c("lo","hi") := NULL]
+  
   # Weighted EU mean at start year
   eu_mean_k <- dtk[, .(eu_mean = weighted.mean(value, w = w_pop, na.rm = TRUE)), by = .(year, sex)]
   dtk <- merge(dtk, eu_mean_k, by = c("year","sex"))
   dtk[, baseline := value - eu_mean]
+  
   # Full-sample K-year β (optional to report)
-  bmod_k <- feols(gk ~ baseline | geo + year, data = dtk, cluster = ~geo, weights = ~w_pop)
+  bmod_k <- feols(gk ~ baseline | geo + year, data = dtk, cluster = ~ geo, weights = ~ w_pop)
   saveRDS(bmod_k, sprintf("outputs/beta_eu_mean_Tonly_weighted_%s_K%d.rds", weight_label, K_YEARS))
   fixest::etable(bmod_k, file = sprintf("outputs/beta_eu_mean_Tonly_weighted_%s_K%d.txt", weight_label, K_YEARS))
-  # Rolling windows on start year
+  
+  # Rolling windows on start year (±2 years around center)
   yrs <- sort(unique(dtk$year))
   if (length(yrs) >= 7) {
     centers <- yrs[yrs >= (min(yrs) + 2) & yrs <= (max(yrs) - 2)]
-    roll_dt <- rbindlist(lapply(centers, function(cy){
+    roll_dt <- rbindlist(lapply(centers, function(cy) {
       sub <- dtk[year %between% c(cy - 2, cy + 2)]
       if (nrow(sub) < 50) return(data.table(center = cy, beta = NA_real_, se = NA_real_, n = nrow(sub)))
       fit <- tryCatch(
-        feols(gk ~ baseline | geo + year, data = sub, cluster = ~geo, weights = ~w_pop),
+        feols(gk ~ baseline | geo + year, data = sub, cluster = ~ geo, weights = ~ w_pop),
         error = function(e) NULL
       )
       if (is.null(fit)) return(data.table(center = cy, beta = NA_real_, se = NA_real_, n = nrow(sub)))
@@ -236,6 +252,7 @@ if (ROLLING_USE_K_YEARS) {
     roll_dt[, `:=`(ci_lo = beta - 1.96 * se,
                    ci_hi = beta + 1.96 * se)]
     data.table::fwrite(roll_dt, sprintf("outputs/beta_rolling_Tonly_wpop_%s_K%d.csv", weight_label, K_YEARS))
+    
     g_beta <- ggplot(roll_dt, aes(center, beta)) +
       geom_hline(yintercept = 0, linetype = 2) +
       geom_vline(xintercept = 2020, linetype = 3) +
@@ -248,7 +265,7 @@ if (ROLLING_USE_K_YEARS) {
       theme_pub()
     ggplot2::ggsave(sprintf("figs/F1_beta_rolling_Tonly_wpop_%s_K%d.png", weight_label, K_YEARS),
                     g_beta, width = 7, height = 4, dpi = 300)
-    # Also write legacy filenames to point to the K-year figure by default
+    # Legacy filenames for manuscript
     ggplot2::ggsave("figs/F1_beta_rolling_Tonly_wpop.png", g_beta, width = 7, height = 4, dpi = 300)
     ggplot2::ggsave("figs/F1_beta_rolling.png",          g_beta, width = 7, height = 4, dpi = 300)
   } else {
@@ -257,13 +274,15 @@ if (ROLLING_USE_K_YEARS) {
 } else {
   message("ROLLING_USE_K_YEARS == FALSE: using annual β for rolling (not recommended).")
 }
-# -------- Provenance note --------
-writeLines(sprintf("Weights: %s (anchor year %s = %s)\nβ primary: strict annual steps; Rolling β: %s (K=%d)\nTimestamp: %s",
-                   ifelse(USE_ANCHOR_WEIGHTS, "anchor-year", "year-specific"),
-                   ANCHOR_YEAR, weight_label,
-                   ifelse(ROLLING_USE_K_YEARS, "forward growth", "annual"),
-                   K_YEARS,
-                   format(Sys.time(), "%Y-%m-%d %H:%M:%S")),
-           sprintf("outputs/weights_info_%s.txt", weight_label))
 
-message("Done: weighted σ (anchor), β annual (strict), and rolling β (K-year) exported (weights = ", weight_label, ").")
+# -------- Provenance note --------
+writeLines(sprintf(
+  "Weights: %s (anchor year %s = %s)\nβ primary: strict annual steps; Rolling β: %s (K=%d)\nTimestamp: %s",
+  ifelse(USE_ANCHOR_WEIGHTS, "anchor-year", "year-specific"),
+  ANCHOR_YEAR, weight_label,
+  ifelse(ROLLING_USE_K_YEARS, "forward growth", "annual"),
+  K_YEARS,
+  format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+), sprintf("outputs/weights_info_%s.txt", weight_label))
+
+message("Done: weighted σ (anchor/yearly), β annual (strict), and rolling β (K-year) exported (weights = ", weight_label, ").")

@@ -1,0 +1,35 @@
+{
+  "a47c23de3aecd73aaf5d38e19ecf72ac": {
+    "id": ["demo_r_mlifexp"],
+    "time_format": ["num"],
+    "filters": null,
+    "type": ["code"],
+    "select_time": null,
+    "stringsAsFactors": [false],
+    "keepFlags": [false],
+    "source": ["bulk"],
+    "download_date": ["2025-08-26"]
+  },
+  "b6d9abcb19eb65eede0ba95feb5c50d4": {
+    "id": ["tgs00101"],
+    "time_format": ["num"],
+    "filters": null,
+    "type": ["code"],
+    "select_time": null,
+    "stringsAsFactors": [false],
+    "keepFlags": [false],
+    "source": ["bulk"],
+    "download_date": ["2025-08-26"]
+  },
+  "f79a9e278ca4d2491874c86b79d741f4": {
+    "id": ["demo_r_pjangrp3"],
+    "time_format": ["num"],
+    "filters": null,
+    "type": ["code"],
+    "select_time": null,
+    "stringsAsFactors": [false],
+    "keepFlags": [false],
+    "source": ["bulk"],
+    "download_date": ["2025-08-26"]
+  }
+}

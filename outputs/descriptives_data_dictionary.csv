@@ -1,7 +1,0 @@
-variable,type,meaning
-geo,factor,NUTS-2 region code
-year,int,calendar year
-sex,factor,M/F/T
-value,numeric,life expectancy at birth (years)
-border,0/1,1 if border region (GISCO)
-pop,numeric,population (if available)

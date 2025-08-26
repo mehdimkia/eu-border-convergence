@@ -1,2 +1,0 @@
-n_pre,statistic,df,p_value,terms
-5,6.099620273768547,5,0.29664579562427573,post_year::-5:border; post_year::-4:border; post_year::-3:border; post_year::-2:border; post_year::-1:border

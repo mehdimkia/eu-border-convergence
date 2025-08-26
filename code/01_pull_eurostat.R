@@ -112,37 +112,57 @@ message("Done: Eurostat extracts saved to data/raw/eurostat/.")
 # =============================
 # Harmonize to NUTS-2016 (crosswalk)
 # =============================
+# ---------- Harmonize to NUTS-2016 (correct handling) ----------
+# Re-read raw extracts
+dem <- readRDS("data/raw/eurostat/demo_r_mlifexp_NUTS2_1995_2023.rds")
+pop <- readRDS("data/raw/eurostat/demo_r_pjangrp3_TOTAL_NUTS2_1995_2023.rds")
 
-# Re-read saved LE extract to decouple from workspace mutations
-dem <- readRDS('data/raw/eurostat/demo_r_mlifexp_NUTS2_1995_2023.rds')
-
-# If any older NUTS vintage appears, apply crosswalk at:
-# data/raw/crosswalks/nuts_crosswalk.csv with cols:
-# old_code,new_code,share,year_from,year_to
-if (file.exists('data/raw/crosswalks/nuts_crosswalk.csv')) {
-  cw <- data.table(readr::read_csv('data/raw/crosswalks/nuts_crosswalk.csv', show_col_types = FALSE))
-  dem <- merge(dem, cw, by.x = 'geo', by.y = 'old_code', all.x = TRUE)
-  dem[, geo_2016 := ifelse(is.na(new_code), geo, new_code)]
-  # If splits exist, distribute value by share; else keep original
-  dem[, value := ifelse(is.na(share), value, value * share)]
-  dem[, geo := geo_2016][, c('new_code','geo_2016','share') := NULL]
+if (file.exists("data/raw/crosswalks/nuts_crosswalk.csv")) {
+  cw <- data.table::fread("data/raw/crosswalks/nuts_crosswalk.csv", showProgress = FALSE)
+  setnames(cw, tolower(names(cw)))
+  if (!"year_from" %in% names(cw)) cw[, year_from := -Inf]
+  if (!"year_to"   %in% names(cw)) cw[, year_to   :=  Inf]
+  
+  # Identity rows for unmatched codes
+  id_codes <- setdiff(unique(dem$geo), unique(cw$old_code))
+  if (length(id_codes)) {
+    cw <- rbind(cw, data.table(old_code = id_codes, new_code = id_codes, share = 1, year_from = -Inf, year_to = Inf), fill = TRUE)
+  }
+  
+  # Map POP (counts): allocate by share, respect year window, then sum
+  pop_map <- merge(pop, cw, by.x = "geo", by.y = "old_code", allow.cartesian = TRUE)
+  pop_map <- pop_map[year >= year_from & year <= year_to]
+  pop_map[, geo := new_code][, pop := pop * share]
+  pop_h <- pop_map[, .(pop = sum(pop, na.rm = TRUE)), by = .(geo, year)]
+  
+  # Map LE (rates): do NOT scale; later pop-weighted average
+  dem_map <- merge(dem, cw, by.x = "geo", by.y = "old_code", allow.cartesian = TRUE)
+  dem_map <- dem_map[year >= year_from & year <= year_to]
+  dem_map[, geo := new_code]
+  setnames(dem_map, "value", "le")
+  
+  # Attach the mapped population weights at the same split granularity
+  # (match by original geo-year-new_code tuple)
+  pop_w <- pop_map[, .(old_geo = geo, year, new_code, pop_split = pop, geo = new_code)]
+  dem_w <- merge(
+    dem_map[, .(old_geo = geo, year, sex, le, new_code)],
+    pop_w, by = c("old_geo", "year", "new_code"), all.x = TRUE, allow.cartesian = TRUE
+  )
+  
+  # Weighted collapse to unique (geo=new_code, year, sex)
+  dem_h <- dem_w[, .(
+    value = sum(le * pop_split, na.rm = TRUE) / sum(pop_split, na.rm = TRUE)
+  ), by = .(geo = new_code, year, sex)]
+  
+} else {
+  # No crosswalk: just rename and keep unique
+  dem_h <- as.data.table(dem)[, .(value = value), by = .(geo, year, sex)]
+  pop_h <- as.data.table(pop)[, .(pop = pop), by = .(geo, year)]
 }
-saveRDS(dem, 'data/derived/le_panel_raw.rds')
-data.table::fwrite(dem, 'data/derived/le_panel_raw.csv')
-message('Saved harmonised LE panel to data/derived/le_panel_raw.*')
 
-# --- Harmonize POP the same way and save  ← NEW ---
-pop <- readRDS('data/raw/eurostat/demo_r_pjangrp3_TOTAL_NUTS2_1995_2023.rds')
-
-if (file.exists('data/raw/crosswalks/nuts_crosswalk.csv')) {
-  cw <- data.table(readr::read_csv('data/raw/crosswalks/nuts_crosswalk.csv', show_col_types = FALSE))
-  pop <- merge(pop, cw, by.x = 'geo', by.y = 'old_code', all.x = TRUE)
-  pop[, geo_2016 := ifelse(is.na(new_code), geo, new_code)]
-  pop[, pop := ifelse(is.na(share), pop, pop * share)]
-  pop[, geo := geo_2016][, c('new_code','geo_2016','share') := NULL]
-}
-saveRDS(pop, 'data/derived/pop_panel_raw.rds')
-data.table::fwrite(pop, 'data/derived/pop_panel_raw.csv')
-message('Saved harmonised POP panel to data/derived/pop_panel_raw.*')
-
-message("All done: raw extracts written with metadata; LE & POP harmonized to NUTS-2016.")
+# Save derived panels
+saveRDS(dem_h, "data/derived/le_panel_raw.rds")
+data.table::fwrite(dem_h, "data/derived/le_panel_raw.csv")
+saveRDS(pop_h, "data/derived/pop_panel_raw.rds")
+data.table::fwrite(pop_h, "data/derived/pop_panel_raw.csv")
+message("Saved harmonised LE (pop-weighted) and POP panels to data/derived/.")
