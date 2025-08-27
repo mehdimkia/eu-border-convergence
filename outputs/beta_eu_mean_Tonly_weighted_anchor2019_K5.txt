@@ -7,8 +7,8 @@
    Model:              & (1)\\  
    \midrule
    \emph{Variables}\\
-   baseline            & -0.1211$^{***}$\\   
-                       & (0.0097)\\   
+   baseline            & -0.1204$^{***}$\\   
+                       & (0.0105)\\   
    \midrule
    \emph{Fixed-effects}\\
    geo                 & Yes\\  
@@ -16,8 +16,8 @@
    \midrule
    \emph{Fit statistics}\\
    Observations        & 4,797\\  
-   R$^2$               & 0.75205\\  
-   Within R$^2$        & 0.22956\\  
+   R$^2$               & 0.74950\\  
+   Within R$^2$        & 0.23668\\  
    \midrule \midrule
    \multicolumn{2}{l}{\emph{Clustered (geo) standard-errors in parentheses}}\\
    \multicolumn{2}{l}{\emph{Signif. Codes: ***: 0.01, **: 0.05, *: 0.1}}\\

@@ -1,3 +1,4 @@
 Weights: anchor-year (anchor year 2019 = anchor2019)
-β primary: strict annual steps; Rolling β: forward growth (K=5)
-Timestamp: 2025-08-26 11:51:42
+β primary: strict annual steps (log growth on log-level gap)
+Rolling β: forward log growth, annualized (K=5)
+Timestamp: 2025-08-27 13:08:09
