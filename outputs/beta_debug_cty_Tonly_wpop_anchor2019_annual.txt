@@ -1,0 +1,1 @@
+WITHIN-COUNTRY (weighted) β: n=5830 | beta=-0.545753

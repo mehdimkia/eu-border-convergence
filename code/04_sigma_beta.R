@@ -6,6 +6,8 @@ USE_ANCHOR_WEIGHTS <- TRUE    # if TRUE, use population from ANCHOR_YEAR for all
 ANCHOR_YEAR        <- 2019    # anchor year to use for weights
 ROLLING_USE_K_YEARS <- TRUE   # if TRUE, rolling β uses K-year forward growth (annualized)
 K_YEARS            <- 5       # forward horizon for rolling β (if enabled)
+RUN_UNWEIGHTED_EU   <- TRUE   # write unweighted EU β (annual)
+RUN_WITHIN_COUNTRY  <- TRUE   # write within-country β (annual, weighted)
 
 # -------- Project root (deterministic) --------
 if (requireNamespace("rprojroot", quietly = TRUE)) {
@@ -51,7 +53,8 @@ le[, pop   := as.numeric(pop)]
 
 # -------- Build weights (anchor-year or yearly) --------
 # If using anchor-year weights: for each geo, take population from ANCHOR_YEAR (nearest-year fallback)
-weight_label <- if (USE_ANCHOR_WEIGHTS) sprintf("anchor2019") else "yearly"
+weight_label <- if (USE_ANCHOR_WEIGHTS) sprintf("anchor%d", ANCHOR_YEAR) else "yearly"
+
 if (USE_ANCHOR_WEIGHTS) {
   pa <- copy(pop)[!is.na(pop)]
   pa[, dist := abs(year - ANCHOR_YEAR)]
@@ -189,6 +192,56 @@ data.table(sd_log_baseline = sd_log_baseline,
 # Save model and a text table (annual)
 saveRDS(bmod_w_annual, sprintf("outputs/beta_eu_mean_Tonly_weighted_%s_annual.rds", weight_label))
 fixest::etable(bmod_w_annual, file = sprintf("outputs/beta_eu_mean_Tonly_weighted_%s_annual.txt", weight_label))
+# -------------------------------------------------------------------
+# A) Unweighted EU-mean β (annual; same log spec, NO weights)
+# -------------------------------------------------------------------
+if (isTRUE(RUN_UNWEIGHTED_EU)) {
+  bmod_unw_annual <- feols(g ~ baseline | geo + year, data = dt, cluster = ~ geo)
+  saveRDS(bmod_unw_annual, "outputs/beta_eu_mean_Tonly_unweighted_annual.rds")
+  fixest::etable(bmod_unw_annual,
+                 file = "outputs/beta_eu_mean_Tonly_unweighted_annual.txt")
+  cat(sprintf("UNWEIGHTED EU β: n=%d | beta=%.6f\n",
+              nobs(bmod_unw_annual), coef(bmod_unw_annual)["baseline"]),
+      file = "outputs/beta_debug_Tonly_unweighted_annual.txt")
+}
+
+# -------------------------------------------------------------------
+# B) Within-country β (annual; weighted; country-demeaned baseline)
+# -------------------------------------------------------------------
+if (isTRUE(RUN_WITHIN_COUNTRY)) {
+  # Country code (robust, with fallback)
+  if ("CNTR_CODE" %in% names(le)) {
+    le[, ctry := CNTR_CODE]
+  } else if ("country" %in% names(le)) {
+    le[, ctry := country]
+  } else {
+    le[, ctry := substr(geo, 1, 2)]  # NUTS country prefix fallback
+  }
+  
+  # Country mean (weighted to match the primary spec)
+  cty_mean <- le[, .(cty_mean = weighted.mean(value, w = w_pop, na.rm = TRUE)),
+                 by = .(ctry, year, sex)]
+  le <- merge(le, cty_mean, by = c("ctry","year","sex"), all.x = TRUE)
+  
+  # Country-demeaned log baseline
+  le[, baseline_cty := log(value) - log(cty_mean)]
+  
+  dt_cty <- le[eval(SAMPLE) & is.finite(g) & is.finite(baseline_cty) &
+                 is.finite(w_pop) & w_pop > 0]
+  
+  bmod_cty_w <- feols(g ~ baseline_cty | geo + year,
+                      data = dt_cty, cluster = ~ geo, weights = ~ w_pop)
+  
+  saveRDS(bmod_cty_w, sprintf("outputs/beta_cty_mean_Tonly_weighted_%s_annual.rds", weight_label))
+  fixest::etable(bmod_cty_w,
+                 file = sprintf("outputs/beta_cty_mean_Tonly_weighted_%s_annual.txt", weight_label))
+  
+  cat(sprintf("WITHIN-COUNTRY (weighted) β: n=%d | beta=%.6f\n",
+              nobs(bmod_cty_w), coef(bmod_cty_w)["baseline_cty"]),
+      file = sprintf("outputs/beta_debug_cty_Tonly_wpop_%s_annual.txt", weight_label))
+}
+
+
 
 # Debug stamp
 cat(sprintf("Run: %s | sample=Tonly_wpop_%s_ANNUAL | n=%d | beta_baseline(log-gap)=%.6f\n",
