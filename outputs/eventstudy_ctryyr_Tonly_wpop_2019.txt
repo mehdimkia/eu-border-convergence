@@ -1,0 +1,81 @@
+
+\begingroup
+\centering
+\begin{tabular}{lc}
+   \tabularnewline \midrule \midrule
+   Dependent Variable:                  & value\\  
+   Model:                               & (1)\\  
+   \midrule
+   \emph{Variables}\\
+   border $\times$ post\_year $=$ -24   & -0.0672\\   
+                                        & (0.1514)\\   
+   border $\times$ post\_year $=$ -23   & -0.0438\\   
+                                        & (0.1355)\\   
+   border $\times$ post\_year $=$ -22   & -0.0144\\   
+                                        & (0.1076)\\   
+   border $\times$ post\_year $=$ -21   & -0.0224\\   
+                                        & (0.1002)\\   
+   border $\times$ post\_year $=$ -20   & -0.0512\\   
+                                        & (0.0950)\\   
+   border $\times$ post\_year $=$ -19   & 0.0301\\   
+                                        & (0.0888)\\   
+   border $\times$ post\_year $=$ -18   & 0.0488\\   
+                                        & (0.0986)\\   
+   border $\times$ post\_year $=$ -17   & -0.0490\\   
+                                        & (0.0751)\\   
+   border $\times$ post\_year $=$ -16   & -0.0254\\   
+                                        & (0.0899)\\   
+   border $\times$ post\_year $=$ -15   & -0.0434\\   
+                                        & (0.0735)\\   
+   border $\times$ post\_year $=$ -14   & -0.0723\\   
+                                        & (0.0641)\\   
+   border $\times$ post\_year $=$ -13   & -0.0405\\   
+                                        & (0.0714)\\   
+   border $\times$ post\_year $=$ -12   & 0.0022\\   
+                                        & (0.0574)\\   
+   border $\times$ post\_year $=$ -11   & -0.0706\\   
+                                        & (0.0597)\\   
+   border $\times$ post\_year $=$ -10   & -0.0538\\   
+                                        & (0.0529)\\   
+   border $\times$ post\_year $=$ -9    & -0.0499\\   
+                                        & (0.0525)\\   
+   border $\times$ post\_year $=$ -8    & 0.0027\\   
+                                        & (0.0518)\\   
+   border $\times$ post\_year $=$ -7    & -0.0174\\   
+                                        & (0.0410)\\   
+   border $\times$ post\_year $=$ -6    & -0.0290\\   
+                                        & (0.0400)\\   
+   border $\times$ post\_year $=$ -5    & 0.0285\\   
+                                        & (0.0358)\\   
+   border $\times$ post\_year $=$ -4    & 0.0084\\   
+                                        & (0.0372)\\   
+   border $\times$ post\_year $=$ -3    & 0.0442\\   
+                                        & (0.0302)\\   
+   border $\times$ post\_year $=$ -2    & 0.0422\\   
+                                        & (0.0259)\\   
+   border $\times$ post\_year $=$ -1    & 0.0237\\   
+                                        & (0.0291)\\   
+   border $\times$ post\_year $=$ 1     & -0.0750\\   
+                                        & (0.1672)\\   
+   border $\times$ post\_year $=$ 2     & 0.0991\\   
+                                        & (0.0613)\\   
+   border $\times$ post\_year $=$ 3     & 0.0523\\   
+                                        & (0.0377)\\   
+   border $\times$ post\_year $=$ 4     & 0.1263$^{**}$\\   
+                                        & (0.0503)\\   
+   \midrule
+   \emph{Fixed-effects}\\
+   geo                                  & Yes\\  
+   ctry\_year                           & Yes\\  
+   \midrule
+   \emph{Fit statistics}\\
+   Observations                         & 6,102\\  
+   R$^2$                                & 0.99388\\  
+   Within R$^2$                         & 0.01010\\  
+   \midrule \midrule
+   \multicolumn{2}{l}{\emph{Clustered (geo) standard-errors in parentheses}}\\
+   \multicolumn{2}{l}{\emph{Signif. Codes: ***: 0.01, **: 0.05, *: 0.1}}\\
+\end{tabular}
+\par\endgroup
+
+

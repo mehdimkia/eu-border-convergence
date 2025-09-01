@@ -1,0 +1,2 @@
+window,n_pre,statistic,df,p_value,terms
+2015–2018,4,5.900684005478984,4,0.20668903851257212,post_year::-4:border; post_year::-3:border; post_year::-2:border; post_year::-1:border
