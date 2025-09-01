@@ -1,0 +1,5 @@
+Specification,Beta,Half_life,Realistic,Use_for
+Gap-to-mean (MAIN),-0.00536676505904542,128.808607375533,Yes,Main results
+"Log, year FE only",-0.0183111932814791,37.5061006086724,Yes,Robustness
+Levels specification,-0.00425803650444832,162.438815947764,Yes,Alternative
+Gap-to-mean unweighted,-0.0051339108303383,134.666611699329,Yes,Robustness
